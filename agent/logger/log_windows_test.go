@@ -341,47 +341,109 @@ func TestSeelogConfig_FileLevelDefault(t *testing.T) {
 }
 
 func TestSetLevel(t *testing.T) {
-	os.Setenv(LOGLEVEL_ON_INSTANCE_ENV_VAR, "crit")
-	os.Setenv(LOGLEVEL_ENV_VAR, "debug")
-
 	resetEnv := func() {
 		os.Unsetenv(LOGLEVEL_ENV_VAR)
 		os.Unsetenv(LOGLEVEL_ON_INSTANCE_ENV_VAR)
+		os.Unsetenv(LOG_DRIVER_ENV_VAR)
 	}
-	defer resetEnv()
+	resetEnv()
 
-	Config = &logConfig{
-		logfile:       "foo.log",
-		driverLevel:   DEFAULT_LOGLEVEL,
-		instanceLevel: setInstanceLevelDefault(),
-		RolloverType:  DEFAULT_ROLLOVER_TYPE,
-		outputFormat:  DEFAULT_OUTPUT_FORMAT,
-		MaxFileSizeMB: DEFAULT_MAX_FILE_SIZE,
-		MaxRollCount:  DEFAULT_MAX_ROLL_COUNT,
+	testcases := []struct {
+		name                     string
+		logDriver                string
+		loglevel                 string
+		loglevelInstance         string
+		expectedLoglevel         string
+		expectedLoglevelInstance string
+	}{
+		{
+			name:                     "nothing set",
+			logDriver:                "",
+			loglevel:                 "",
+			loglevelInstance:         "",
+			expectedLoglevel:         "info",
+			expectedLoglevelInstance: "info",
+		},
+		{
+			name:                     "only loglevel",
+			logDriver:                "",
+			loglevel:                 "debug",
+			loglevelInstance:         "",
+			expectedLoglevel:         "debug",
+			expectedLoglevelInstance: "debug",
+		},
+		{
+			name:                     "only on instance",
+			logDriver:                "",
+			loglevel:                 "",
+			loglevelInstance:         "debug",
+			expectedLoglevel:         "info",
+			expectedLoglevelInstance: "debug",
+		},
+		{
+			name:                     "both levels no driver",
+			logDriver:                "",
+			loglevel:                 "warn",
+			loglevelInstance:         "crit",
+			expectedLoglevel:         "warn",
+			expectedLoglevelInstance: "critical",
+		},
+		{
+			name:                     "loglevel and driver",
+			logDriver:                "journald",
+			loglevel:                 "debug",
+			loglevelInstance:         "",
+			expectedLoglevel:         "debug",
+			expectedLoglevelInstance: "off",
+		},
+		{
+			name:                     "loglevel on instance and driver",
+			logDriver:                "journald",
+			loglevel:                 "",
+			loglevelInstance:         "debug",
+			expectedLoglevel:         "info",
+			expectedLoglevelInstance: "debug",
+		},
+		{
+			name:                     "both levels and driver",
+			logDriver:                "journald",
+			loglevel:                 "warn",
+			loglevelInstance:         "debug",
+			expectedLoglevel:         "warn",
+			expectedLoglevelInstance: "debug",
+		},
+		{
+			name:                     "only driver",
+			logDriver:                "journald",
+			loglevel:                 "",
+			loglevelInstance:         "",
+			expectedLoglevel:         "info",
+			expectedLoglevelInstance: "off",
+		},
 	}
-	SetLevel(os.Getenv(LOGLEVEL_ENV_VAR), os.Getenv(LOGLEVEL_ON_INSTANCE_ENV_VAR))
-	require.Equal(t, "debug", Config.driverLevel)
-	require.Equal(t, "critical", Config.instanceLevel)
 
-	c := seelogConfig()
-	require.Equal(t, `
-<seelog type="asyncloop">
-	<outputs formatid="logfmt">
-		<filter levels="debug,info,warn,error,critical">
-			<console />
-			<custom name="wineventlog" formatid="windows" />
-		</filter>
-		<filter levels="critical">
-			<rollingfile filename="foo.log" type="date"
-			 datepattern="2006-01-02-15" archivetype="none" maxrolls="24" />
-		</filter>
-	</outputs>
-	<formats>
-		<format id="logfmt" format="%EcsAgentLogfmt" />
-		<format id="json" format="%EcsAgentJson" />
-		<format id="windows" format="%Msg" />
-	</formats>
-</seelog>`, c)
+	for _, test := range testcases {
+		t.Run(test.name, func(t *testing.T) {
+			resetEnv()
+
+			os.Setenv(LOGLEVEL_ENV_VAR, test.loglevel)
+			os.Setenv(LOGLEVEL_ON_INSTANCE_ENV_VAR, test.loglevelInstance)
+			os.Setenv(LOG_DRIVER_ENV_VAR, test.logDriver)
+
+			Config = &logConfig{
+				logfile:       "foo.log",
+				driverLevel:   DEFAULT_LOGLEVEL,
+				instanceLevel: setInstanceLevelDefault(),
+				RolloverType:  DEFAULT_ROLLOVER_TYPE,
+				outputFormat:  DEFAULT_OUTPUT_FORMAT,
+				MaxFileSizeMB: DEFAULT_MAX_FILE_SIZE,
+				MaxRollCount:  DEFAULT_MAX_ROLL_COUNT,
+			}
+			SetLevel(os.Getenv(LOGLEVEL_ENV_VAR), os.Getenv(LOGLEVEL_ON_INSTANCE_ENV_VAR))
+			require.Equal(t, test.expectedLoglevel, Config.driverLevel)
+			require.Equal(t, test.expectedLoglevelInstance, Config.instanceLevel)
+		})
+	}
 }
 
 type LogContextMock struct{}
